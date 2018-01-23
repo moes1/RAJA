@@ -13,6 +13,6 @@ build_script:
 
     cmake ../
 
-    cmake --build . --config Release
+    cmake -G "Visual Studio 15 2017 Win64" --build . --config Release
 test_script:
 - cmd: ctest -VV -C Release
