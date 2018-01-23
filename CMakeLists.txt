@@ -37,6 +37,7 @@ if (NOT RAJA_LOADED)
   set(ENABLE_OPENMP On CACHE Bool "Build OpenMP support")
   set(ENABLE_CUDA Off CACHE Bool "Build CUDA support")
   set(ENABLE_COPY_HEADERS Off CACHE Bool "")
+  set(ENABLE_ALL_WARNINGS Off CACHE Bool "")
   set(ENABLE_WARNINGS_AS_ERRORS Off CACHE Bool "")
 
   set(RAJA_CXX_STANDARD_FLAG "default" CACHE STRING "Specific c++ standard flag to use, default attempts to autodetect the highest available")
