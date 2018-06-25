@@ -207,7 +207,9 @@ struct rocmInfo {
   int static_size = 0;   // amount of static LDS used by kernel
   int dynamic_size = 16; // amount of dyname LDS used by kernel
   void * device_mem_ptr; // ptr to device mem area filled in at launch
+  void * device_array_ptr; // ptr to device mem area filled in at launch
   void * host_mem_ptr;   // ptr to host mem filled in at launch
+  void * host_array_ptr;   // ptr to host mem filled in at launch
   void * debug;          // ptr to device mem area filled in at launch
   rocmStream_t stream = 0;
   bool setup_reducers = false;

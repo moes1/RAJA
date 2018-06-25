@@ -331,8 +331,9 @@ struct Executor<Collapse<rocm_collapse_exec<Async>, FOR_TYPES...>> {
 
       rocmStream_t stream = 0;
       auto ext =
-        hc::extent<3>( dims.num_blocks.x,dims.num_blocks.y,dims.num_blocks.z)
-              .tile(dims.num_threads.x,dims.num_threads.y,dims.num_threads.z);
+        hc::extent<3>( dims.num_blocks.z,dims.num_blocks.y,dims.num_blocks.x)
+              .tile(dims.num_threads.z,dims.num_threads.y,dims.num_threads.x);
+
       auto fut = hc::parallel_for_each(ext,
                                        [=](const hc::tiled_index<3> & idx)
                                        [[hc]]{

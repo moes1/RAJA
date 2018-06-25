@@ -197,8 +197,8 @@ RAJA_INLINE void forall_impl(rocm_exec<BlockSize, Async>,
 
         RI * launch_info = (RI *)rocmDeviceAlloc(sizeof(RI));
         RAJA::rocm::do_setup_reducers(len, BlockSize, tiles, 0, 16, stream);
-        RAJA::rocm::detail::tl_status.host_mem_ptr = malloc(tiles*sizeof(unsigned long));  // need to get correct type
-        RAJA::rocm::detail::tl_status.device_mem_ptr = rocmDeviceAlloc(tiles*sizeof(unsigned long));  // need to get correct type
+        RAJA::rocm::detail::tl_status.host_mem_ptr = malloc(8*tiles*sizeof(unsigned long));  // need to get correct type
+        RAJA::rocm::detail::tl_status.device_mem_ptr = rocmDeviceAlloc(8*tiles*sizeof(unsigned long));  // need to get correct type
 
         rocmMemcpy(&RAJA::rocm::detail::tl_status, launch_info, sizeof(RI));
 

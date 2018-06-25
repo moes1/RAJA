@@ -907,7 +907,7 @@ private:
 #else
 static const std::size_t tile_size = 256;
 static const std::size_t segment_size = 32768;
-static const std::size_t max_reductions = 16;
+static const std::size_t max_reductions = 8;
 static const std::size_t block_size = segment_size / max_reductions;
 static const std::size_t max_size = block_size / tile_size;
 
@@ -995,7 +995,7 @@ RAJA_INLINE void barrier() [[cpu]]
 {
    abort_msg("Call to to function hcc::barrier() invalid on cpu");
 }
-#if 0
+#if 1
 RAJA_INLINE void* get_group_memory(unsigned offset) [[hc]]
 {
    char * ptr = (char *)hc::get_group_segment_base_pointer();
@@ -1051,6 +1051,25 @@ struct reductions
 
 std::array<reductions::entry, max_reductions> reductions::reduction_table = {};
 
+struct identity
+{
+   template<class T>
+   RAJA_INLINE T operator()(T x) const
+   {
+      return x;
+   }
+};
+
+template<class Operator>
+struct default_value
+{
+   template<class T>
+   RAJA_INLINE static T apply(T)
+   {
+      return {};
+   }
+};
+
 template<class T, class Joiner>
 struct reduce_data
 {
@@ -1081,19 +1100,28 @@ struct reduce_data
 };
 
 
-template<class Joiner, typename T>
+template<typename T, class Joiner, class Finalizer=identity>
 class reducer
 {
 public:
    static_assert(std::is_trivial<T>::value, "Reductions only supported for trivial types");
 
 
+   int reduction;
    copy_ptr<reduce_data<T, Joiner>> data;
 
 
    RAJA_INLINE RAJA_HOST_DEVICE reducer(T init_val) 
    : data{init_val}
    { }
+
+   RAJA_INLINE RAJA_HOST_DEVICE reducer(T init_val,int reduction_val)
+    : data{init_val}
+   { 
+       reduction= data.data->id;
+       //std::cout<<" creating reduce_sum "<<init_val<<" reduction number= "<<reduction<<std::endl;
+   }
+
 
 ///  ~reducer
 
@@ -1103,12 +1131,22 @@ public:
 //      return std::accumulate(data->result.begin(), data->result.end(), data->value, Joiner());
     typedef  struct RAJA::rocm::detail::rocmInfo RI;
     RI & rocm_info = RAJA::rocm::detail::tl_status;
-    T sum = Joiner::identity();
+    //T sum = Joiner::identity();
+    T sum = data->value;
     int tiles = rocm_info.tiles;
+
+    int reduce_num = this->reduction;
+    printf("init_val = %d\n",(int)data->value);
+    printf("tiles = %d\n",tiles);
     // copy just the result buffers back to the host.
-    rocmMemcpy(rocm_info.device_mem_ptr,rocm_info.host_mem_ptr,tiles*sizeof(T));
-    for(int i=0;i<tiles;i++) sum += ((T *) rocm_info.host_mem_ptr)[i];
-    free(rocm_info.host_mem_ptr);
+    rocmMemcpy(rocm_info.device_mem_ptr,rocm_info.host_mem_ptr,8*tiles*sizeof(T));
+    for(int i=0;i<tiles;i++) 
+    {
+       printf("i=%d reduction=%d sum=%f %f\n",i,reduce_num,sum,((T *) rocm_info.host_mem_ptr)[i*8+reduce_num]);
+       sum += ((T *) rocm_info.host_mem_ptr)[i*8+reduce_num];
+    }//    for(int i=0;i<2;i++) sum += ((T *) rocm_info.host_mem_ptr)[i];
+    //free(rocm_info.host_mem_ptr);
+    //printf("final sum %f\n",sum);
     return sum;
    }
 
@@ -1144,7 +1182,7 @@ public:
 //   void combine(T other) const { Joiner{}(data->value, other); }
 
 // group reduction out of LDS memory
-   RAJA_INLINE void reduce(T x) const [[hc]]
+   RAJA_INLINE void reduce(T x, int red) const [[hc]]
    {
       const auto local = hc_get_workitem_id(0);
       const auto tile = hc_get_group_id(0);
@@ -1153,6 +1191,8 @@ public:
                                         // the group
 
       if (local == 0) std::fill(buffer, buffer+tile_size, Joiner::identity());
+      //T * buffer = local_mem();
+      //buffer[local] = Joiner::identity();
       barrier();
 
       join(buffer[local], x);
@@ -1173,7 +1213,8 @@ public:
       {
          typedef  struct RAJA::rocm::detail::rocmInfo RI;
          RI ** ptr= (RI **)((unsigned long)hc::get_dynamic_group_segment_base_pointer()+8);
-         join(((T *)(*ptr)->device_mem_ptr)[tile], buffer[0]);
+         //std::fill(&((T *)(*ptr)->device_mem_ptr)[tile], &((T *)(*ptr)->device_mem_ptr)[tile]+1, Joiner::identity());
+         join(((T *)(*ptr)->device_mem_ptr)[tile*8+red], buffer[0]);
       }
       barrier();
    }
@@ -1185,7 +1226,7 @@ public:
 //! specialization of ReduceSum for rocm_reduce
 template <size_t BLOCK_SIZE, bool Async, bool maybe_atomic, typename T>
 class ReduceSum<rocm_reduce<BLOCK_SIZE, Async, maybe_atomic>, T>
-    :  public rocm::reducer<RAJA::reduce::sum<T>,T>
+    :  public rocm::reducer<T,RAJA::reduce::sum<T>>
 {
 
 public:
@@ -1196,15 +1237,15 @@ public:
 //      : base_type(init_val)
 //      {}
 //  using Base = rocm::reducer<Async, RAJA::reduce::sum<T>, T, maybe_atomic>;
-  using Base = rocm::reducer< RAJA::reduce::sum<T>, T>;
-  using Base::Base;
-
+  using Base = rocm::reducer<T,RAJA::reduce::sum<T>>;
+  //using Base::Base;
+  ReduceSum<rocm_reduce<BLOCK_SIZE, Async, maybe_atomic>, T> (T init_val) : Base(init_val,0) {}
       RAJA_INLINE 
       RAJA_DEVICE
       const ReduceSum<rocm_reduce<BLOCK_SIZE, Async, maybe_atomic>, T>&
       operator+=(T val) const [[hc]]
       {
-         this->reduce(val);
+         this->reduce(val, this->reduction);
          return *this ;
       }
 
@@ -1212,20 +1253,20 @@ public:
 //! specialization of ReduceMin for rocm_reduce
 template <size_t BLOCK_SIZE, bool Async, bool maybe_atomic, typename T>
 class ReduceMin<rocm_reduce<BLOCK_SIZE, Async, maybe_atomic>, T>
-    :  public rocm::reducer<RAJA::reduce::min<T>,T>
-//    :  public hcc::reducer<T, hcc::min<T>>
+    :  public rocm::reducer<T,RAJA::reduce::min<T>>
 //    : public rocm::Reduce<Async, RAJA::reduce::min<T>, T, maybe_atomic>
 {
 
 public:
 //  using Base = rocm::reducer<Async, RAJA::reduce::min<T>, T, maybe_atomic>;
-  using Base = rocm::reducer< RAJA::reduce::min<T>, T>;
+  using Base = rocm::reducer<T,RAJA::reduce::min<T>>;
   using Base::Base;
   //! enable min() for ReduceMin -- alias for combine()
-  RAJA_HOST_DEVICE
+  RAJA_INLINE
+  RAJA_DEVICE
   const ReduceMin& min(T rhs) const [[hc]]
   {
-    this->reduce(rhs);
+    this->reduce(rhs,0);
     return *this;
   }
 };
@@ -1240,12 +1281,15 @@ class ReduceMax<rocm_reduce<BLOCK_SIZE, Async, maybe_atomic>, T>
 public:
 //  using Base = rocm::Reduce<Async, RAJA::reduce::max<T>, T, maybe_atomic>;
   using Base = rocm::reducer< RAJA::reduce::max<T>, T>;
+  using Base = rocm::reducer<T,RAJA::reduce::max<T>>;
   using Base::Base;
   //! enable max() for ReduceMax -- alias for combine()
-  RAJA_HOST_DEVICE
+  RAJA_INLINE
+  RAJA_DEVICE
+
   const ReduceMax& max(T rhs) const [[hc]]
   {
-    this->reduce(rhs);
+    this->reduce(rhs,0);
     return *this;
   }
 };
@@ -1254,8 +1298,8 @@ public:
 //! specialization of ReduceMinLoc for rocm_reduce
 template <size_t BLOCK_SIZE, bool Async, bool maybe_atomic, typename T>
 class ReduceMinLoc<rocm_reduce<BLOCK_SIZE, Async, maybe_atomic>, T>
-    :  public rocm::reducer< RAJA::reduce::min<RAJA::reduce::detail::ValueLoc<T>>,
-                          RAJA::reduce::detail::ValueLoc<T>>
+    :  public rocm::reducer<RAJA::reduce::detail::ValueLoc<T>, RAJA::reduce::min<RAJA::reduce::detail::ValueLoc<T>>>
+
 //    : public rocm::Reduce<Async,
 //                          RAJA::reduce::min<RAJA::reduce::detail::ValueLoc<T>>,
 //                          RAJA::reduce::detail::ValueLoc<T>,
@@ -1265,7 +1309,7 @@ class ReduceMinLoc<rocm_reduce<BLOCK_SIZE, Async, maybe_atomic>, T>
 public:
   using value_type = RAJA::reduce::detail::ValueLoc<T>;
   using Base = rocm::
-      reducer<RAJA::reduce::min<value_type>, value_type>;
+  reducer<value_type,RAJA::reduce::min<value_type>>;
   using Base::Base;
 
   //! constructor requires a default value for the reducer
