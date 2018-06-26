@@ -1274,13 +1274,12 @@ public:
 //! specialization of ReduceMax for rocm_reduce
 template <size_t BLOCK_SIZE, bool Async, bool maybe_atomic, typename T>
 class ReduceMax<rocm_reduce<BLOCK_SIZE, Async, maybe_atomic>, T>
-    :  public rocm::reducer<RAJA::reduce::max<T>,T>
+    :  public rocm::reducer<T,RAJA::reduce::max<T>>
 //    : public rocm::Reduce<Async, RAJA::reduce::max<T>, T, maybe_atomic>
 {
 
 public:
 //  using Base = rocm::Reduce<Async, RAJA::reduce::max<T>, T, maybe_atomic>;
-  using Base = rocm::reducer< RAJA::reduce::max<T>, T>;
   using Base = rocm::reducer<T,RAJA::reduce::max<T>>;
   using Base::Base;
   //! enable max() for ReduceMax -- alias for combine()
