@@ -186,6 +186,8 @@ RAJA_INLINE void forall_impl(rocm_exec<BlockSize, Async>,
   auto begin = std::begin(iter);
   auto end = std::end(iter);
 
+  printf("here23 \n");
+
   auto len = std::distance(begin, end);
   if (len > 0 && BlockSize > 0) {
 
@@ -194,6 +196,7 @@ RAJA_INLINE void forall_impl(rocm_exec<BlockSize, Async>,
     RAJA_FT_BEGIN;
 
     rocmStream_t stream = 0;
+     
 
         RI * launch_info = (RI *)rocmDeviceAlloc(sizeof(RI));
         RAJA::rocm::do_setup_reducers(len, BlockSize, tiles, 0, 16, stream);
@@ -217,6 +220,7 @@ RAJA_INLINE void forall_impl(rocm_exec<BlockSize, Async>,
            if(global < len)
              loop_body(std::move(begin)[global]);  
       }).wait();
+    printf("ahoy! \n");
 
     RAJA::rocm::launch(stream);
     if (!Async) RAJA::rocm::synchronize(stream);

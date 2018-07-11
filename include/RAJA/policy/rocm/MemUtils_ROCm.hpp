@@ -394,6 +394,8 @@ RAJA_INLINE void do_setup_reducers(
   detail::tl_status.setup_reducers = true;
 
 
+  printf(" run here \n");
+
   return;
 }
 

@@ -35,6 +35,9 @@
 #include "RAJA/util/types.hpp"
 
 #include <hc.hpp>
+#include <hc_am.hpp>
+#include <pinned_vector.hpp>
+
 #include <hc_printf.hpp>
 #define hipHostMallocDefault        0x0
 #include <hip/hcc_detail/hip_runtime_api.h>

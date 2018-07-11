@@ -57,6 +57,7 @@
 
 
 #include <type_traits>
+#include <numeric>
 
 namespace RAJA
 {
@@ -1032,9 +1033,11 @@ struct reductions
    {
       for(int i=0;i<reduction_table.size();i++)
       {
+         printf("in add function %d %d \n",i, reduction_table.size());
          auto&& x = reduction_table[i];
          if (x.setup == nullptr)
          {
+            printf("running setup? \n");
             x.setup = [&](int tile_len) { r.setup(tile_len); };
             return i;
          }
@@ -1074,6 +1077,7 @@ template<class T, class Joiner>
 struct reduce_data
 {
    T value;
+   hc::pinned_vector<T> result;
 //   T* result;
 //   int length;
 //   int tiles;
@@ -1082,16 +1086,28 @@ struct reduce_data
 
    RAJA_INLINE reduce_data(T init_val)
    : value(init_val), id(reductions::add(*this))
-   {}
+   {
+      typedef  struct RAJA::rocm::detail::rocmInfo RI;
+      RI & rocm_info = RAJA::rocm::detail::tl_status;
+      int tiles = rocm_info.tiles;
+      printf("in this one %d\n",tiles);
+      this->result.resize(tiles, this->get_default_value());
+   }
 
-//   RAJA_INLINE
-//   T get_default_value() const
-//   {
-//      return Joiner::identity();
-//   }
+   T get_default_value() const
+   {
+      return Joiner::identity();
+   }
 
    void setup(int tile_len)
-   { }
+   { 
+
+      typedef  struct RAJA::rocm::detail::rocmInfo RI;
+      RI & rocm_info = RAJA::rocm::detail::tl_status;
+      int tiles = rocm_info.tiles;
+      printf("in setup %d",tiles);
+      this->result.resize(tiles, this->get_default_value());
+   }
 
    ~reduce_data() 
    {
@@ -1123,9 +1139,33 @@ public:
    }
 
 
+   template<class X, class Y>
+   RAJA_INLINE static void join(X& x, const Y& y) [[cpu]][[hc]]
+   {
+      Joiner{}(x, y);
+   }
+
 ///  ~reducer
+   RAJA_INLINE T final_result() const
+   {
+      //return std::accumulate(data->result.begin(), data->result.end(), data->value, this->join_return);
+      typedef  struct RAJA::rocm::detail::rocmInfo RI;
+      RI & rocm_info = RAJA::rocm::detail::tl_status;
+      int tiles = rocm_info.tiles;
+      printf("here!!!! %d\n",tiles);
+      printf("this=%f \n",data->value);
+      printf("this=%f \n",data->result[0]);
+      T reduction = data->value;
+      for(int i=0;i<tiles;i++) 
+      {
+            printf("here! %d\n",i);
+            join(reduction,data->result[i]);
+      }
+      return reduction;
+      //return std::accumulate(data->result.begin(), data->result.end(), 0.0, reducer::join_return);
+   }
 
-
+   /*
    RAJA_INLINE T final_result() const
    {
 //      return std::accumulate(data->result.begin(), data->result.end(), data->value, Joiner());
@@ -1148,7 +1188,7 @@ public:
     //free(rocm_info.host_mem_ptr);
     //printf("final sum %f\n",sum);
     return sum;
-   }
+   }*/
 
    void reset(T init_val, T identity_ = Joiner::identity())
    {
@@ -1168,11 +1208,6 @@ public:
       return (T *) get_group_memory(block_size * data->id);
    }
 
-   template<class X, class Y>
-   RAJA_INLINE static void join(X& x, const Y& y) [[cpu]][[hc]]
-   {
-      Joiner{}(x, y);
-   }
 
    //! alias for operator T()
    RAJA_INLINE
@@ -1186,6 +1221,7 @@ public:
    {
       const auto local = hc_get_workitem_id(0);
       const auto tile = hc_get_group_id(0);
+
 
       tile_static T buffer[tile_size];  // use LDS memory to store values for 
                                         // the group
@@ -1213,8 +1249,9 @@ public:
       {
          typedef  struct RAJA::rocm::detail::rocmInfo RI;
          RI ** ptr= (RI **)((unsigned long)hc::get_dynamic_group_segment_base_pointer()+8);
-         //std::fill(&((T *)(*ptr)->device_mem_ptr)[tile], &((T *)(*ptr)->device_mem_ptr)[tile]+1, Joiner::identity());
+         std::fill(&((T *)(*ptr)->device_mem_ptr)[tile], &((T *)(*ptr)->device_mem_ptr)[tile]+1, Joiner::identity());
          join(((T *)(*ptr)->device_mem_ptr)[tile*8+red], buffer[0]);
+         //join(data->result[tile], buffer[0]);
       }
       barrier();
    }
