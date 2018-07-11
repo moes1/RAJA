@@ -177,6 +177,7 @@ template <size_t BlockSize,
 ////////////////////////////////////////////////////////////////////////
 //
 
+#include "RAJA/policy/rocm/constants.hpp"
 template <typename Iterable, typename LoopBody, size_t BlockSize, bool Async>
 RAJA_INLINE void forall_impl(rocm_exec<BlockSize, Async>,
                              Iterable&& iter,
@@ -197,8 +198,8 @@ RAJA_INLINE void forall_impl(rocm_exec<BlockSize, Async>,
 
         RI * launch_info = (RI *)rocmDeviceAlloc(sizeof(RI));
         RAJA::rocm::do_setup_reducers(len, BlockSize, tiles, 0, 16, stream);
-        RAJA::rocm::detail::tl_status.host_mem_ptr = malloc(8*tiles*sizeof(unsigned long));  // need to get correct type
-        RAJA::rocm::detail::tl_status.device_mem_ptr = rocmDeviceAlloc(8*tiles*sizeof(unsigned long));  // need to get correct type
+        RAJA::rocm::detail::tl_status.host_mem_ptr = malloc(max_reductions*tiles*sizeof(unsigned long));  // need to get correct type
+        RAJA::rocm::detail::tl_status.device_mem_ptr = rocmDeviceAlloc(max_reductions*tiles*sizeof(unsigned long));  // need to get correct type
 
         rocmMemcpy(&RAJA::rocm::detail::tl_status, launch_info, sizeof(RI));
 

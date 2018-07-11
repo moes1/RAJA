@@ -907,7 +907,8 @@ private:
 #else
 static const std::size_t tile_size = 256;
 static const std::size_t segment_size = 32768;
-static const std::size_t max_reductions = 8;
+#include "RAJA/policy/rocm/constants.hpp"
+//static const std::size_t max_reductions = 8;
 static const std::size_t block_size = segment_size / max_reductions;
 static const std::size_t max_size = block_size / tile_size;
 
@@ -1124,6 +1125,11 @@ public:
 
 
 ///  ~reducer
+   template<class X, class Y>
+   RAJA_INLINE static void join(X& x, const Y& y) [[cpu]][[hc]]
+   {
+      Joiner{}(x, y);
+   }
 
 
    RAJA_INLINE T final_result() const
@@ -1139,14 +1145,12 @@ public:
     printf("init_val = %d\n",(int)data->value);
     printf("tiles = %d\n",tiles);
     // copy just the result buffers back to the host.
-    rocmMemcpy(rocm_info.device_mem_ptr,rocm_info.host_mem_ptr,8*tiles*sizeof(T));
+    rocmMemcpy(rocm_info.device_mem_ptr,rocm_info.host_mem_ptr,max_reductions*tiles*sizeof(T));
     for(int i=0;i<tiles;i++) 
     {
-       printf("i=%d reduction=%d sum=%f %f\n",i,reduce_num,sum,((T *) rocm_info.host_mem_ptr)[i*8+reduce_num]);
-       sum += ((T *) rocm_info.host_mem_ptr)[i*8+reduce_num];
+       printf("i=%d reduction=%d sum=%f %f\n",i,reduce_num,sum,((T *) rocm_info.host_mem_ptr)[i*max_reductions+reduce_num]);
+       join(sum,((T *) rocm_info.host_mem_ptr)[i*max_reductions+reduce_num]);
     }//    for(int i=0;i<2;i++) sum += ((T *) rocm_info.host_mem_ptr)[i];
-    //free(rocm_info.host_mem_ptr);
-    //printf("final sum %f\n",sum);
     return sum;
    }
 
@@ -1168,11 +1172,6 @@ public:
       return (T *) get_group_memory(block_size * data->id);
    }
 
-   template<class X, class Y>
-   RAJA_INLINE static void join(X& x, const Y& y) [[cpu]][[hc]]
-   {
-      Joiner{}(x, y);
-   }
 
    //! alias for operator T()
    RAJA_INLINE
